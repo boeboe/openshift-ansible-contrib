@@ -1,0 +1,22 @@
+#
+# install docker package, correct version is ensured by the atomic-openshift-docker-excluder package
+# pyhton-setuptools is needed for an open bug (https://access.redhat.com/solutions/3259271)
+#
+
+- name: install docker package
+  yum:
+    name: "{{item}}"
+  with_items:
+    - docker
+    - python-setuptools
+
+
+#
+# start and enable docker servive
+#
+
+- name: start and enable docker service
+  systemd:
+    name: docker.service
+    enabled: true
+    state: started
