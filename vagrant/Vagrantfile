@@ -76,7 +76,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.hostmanager.enabled = true
   config.hostmanager.manage_host = true
   config.hostmanager.ignore_private_ip = false
-#  config.hostmanager.include_offline = true
+#  config.hostmanager.incoverride_box_urllude_offline = true
 
   if Vagrant.has_plugin?('landrush')
     config.landrush.enabled = true
@@ -105,7 +105,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     #v.customize ["setextradata", :id, "VBoxInternal2/SharedFoldersEnableSymlinksCreate//vagrant","1"]
     v.memory = 1024
     v.cpus = 1
-    override.vm.box = box_name
+    #override.vm.box = box_name
     provider_name = 'virtualbox'
   end
 
@@ -113,7 +113,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     libvirt.cpus = 1
     libvirt.memory = 1024
     libvirt.driver = 'kvm'
-    override.vm.box = box_name
+    #override.vm.box = box_name
     provider_name = 'libvirt'
   end
 
@@ -122,39 +122,69 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.synced_folder '.', '/home/vagrant/sync', disabled: true
 
   config.vm.define "master1" do |master1|
+    master1.vm.box = "boeboe/centos7-50gb"
+    master1.vm.box_version = "1.0.1"
+    master1.vm.provider :virtualbox do |vb|
+      vb.memory = 4096
+      vb.cpus = 1
+    end
     master1.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT}"
     master1.vm.hostname = "master1.example.com"
     master1.hostmanager.aliases = %w(master1)
   end
 
   config.vm.define "node1" do |node1|
+    node1.vm.box = "centos/7"
+    node1.vm.provider :virtualbox do |vb|
+      vb.memory = 2048
+      vb.cpus = 1
+    end
     node1.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT + 1}"
     node1.vm.hostname = "node1.example.com"
     node1.hostmanager.aliases = %w(node1)
   end
 
   config.vm.define "node2" do |node2|
+    node2.vm.box = "centos/7"
+    node2.vm.provider :virtualbox do |vb|
+      vb.memory = 2048
+      vb.cpus = 1
+    end
     node2.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT + 2}"
     node2.vm.hostname = "node2.example.com"
     node2.hostmanager.aliases = %w(node2)
   end
 
+  config.vm.define "node3" do |node3|
+    node3.vm.box = "centos/7"
+    node3.vm.provider :virtualbox do |vb|
+      vb.memory = 2048
+      vb.cpus = 1
+    end
+    node3.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT + 3}"
+    node3.vm.hostname = "node3.example.com"
+    node3.hostmanager.aliases = %w(node3)
+  end
+
   config.vm.define "admin1" do |admin1|
-    admin1.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT + 3}"
+    admin1.vm.box = "centos/7"
+    admin1.vm.network :private_network, ip: "#{NETWORK_BASE}.#{INTEGRATION_START_SEGMENT + 4}"
     admin1.vm.hostname = "admin1.example.com"
     admin1.hostmanager.aliases = %w(admin1)
 
     if deployment_type == 'openshift-enterprise'
       config_playbook = "/usr/share/ansible/openshift-ansible/playbooks/byo/config.yml"
+      #config_playbook = "/usr/share/ansible/openshift-ansible/playbooks/deploy_cluster.yml"
     else
       config_playbook = "/home/vagrant/openshift-ansible/playbooks/byo/config.yml"
+      #config_playbook = "/home/vagrant/openshift-ansible/playbooks/deploy_cluster.yml"
     end
 
     admin1.vm.synced_folder "..", "/home/vagrant/sync", type: sync_type
     admin1.vm.synced_folder ".vagrant", "/home/vagrant/.hidden", type: sync_type
 
     ansible_groups = {
-      OSEv3: ["master1", "node1", "node2"],
+      OSEv3: ["master1", "node1", "node2", "node3"],
       'OSEv3:children': ["masters", "nodes", "etcd", "nfs"],
       'OSEv3:vars': {
         ansible_become: true,
@@ -171,7 +201,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         openshift_hosted_registry_storage_host: 'admin1.example.com',
         openshift_hosted_registry_storage_nfs_directory: '/srv/nfs',
         openshift_hosted_registry_storage_volume_name: 'registry',
-        openshift_hosted_registry_storage_volume_size: '2Gi',
+        openshift_hosted_registry_storage_volume_size: '5Gi',
+        openshift_disable_check: "docker_image_availability,memory_availability,disk_availability,docker_storage",
         rhsm_user: "#{ENV.fetch('SUB_USERNAME', '')}",
         rhsm_password: "#{ENV.fetch('SUB_PASSWORD', '')}",
         rhsm_pool: rhsm_pool,
@@ -179,7 +210,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       etcd: ["master1"],
       nfs: ["admin1"],
       masters: ["master1"],
-      nodes: ["master1", "node1", "node2"],
+      nodes: ["master1", "node1", "node2", "node3"],
     }
 
     ansible_host_vars = {
@@ -213,6 +244,16 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         ansible_host: '192.168.50.22',
         ansible_ssh_private_key_file: "/home/vagrant/.ssh/node2.key"
       },
+      node3: {
+        openshift_ip: '192.168.50.23',
+        openshift_node_labels: quote_labels(
+          region: 'primary',
+          zone: 'central',
+        ),
+        openshift_schedulable: true,
+        ansible_host: '192.168.50.23',
+        ansible_ssh_private_key_file: "/home/vagrant/.ssh/node3.key"
+      },
       admin1: {
         ansible_connection: 'local',
         deployment_type: deployment_type
@@ -220,23 +261,25 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     }
 
     admin1.vm.provision :ansible_local do |ansible|
-      ansible.verbose        = true
-      ansible.install        = true
-      ansible.limit          = 'OSEv3:localhost'
+      ansible.verbose           = "vvv"
+      ansible.install           = true
+      ansible.limit             = 'OSEv3:localhost'
       ansible.provisioning_path = '/home/vagrant/sync/vagrant'
-      ansible.playbook       = '/home/vagrant/sync/vagrant/install.yaml'
-      ansible.groups = ansible_groups
-      ansible.host_vars = ansible_host_vars
+      ansible.playbook          = '/home/vagrant/sync/vagrant/install.yaml'
+      ansible.groups            = ansible_groups
+      ansible.host_vars         = ansible_host_vars
+      #ansible.extra_vars        = { ansible_python_interpreter:"/usr/bin/python3.6" }
     end
 
     admin1.vm.provision :ansible_local do |ansible|
-      ansible.verbose        = true
-      ansible.install        = false
-      ansible.limit          = "OSEv3:localhost"
+      ansible.verbose           = "vvv"
+      ansible.install           = false
+      ansible.limit             = "OSEv3:localhost"
       ansible.provisioning_path = '/home/vagrant/sync/vagrant'
-      ansible.playbook = config_playbook
-      ansible.groups = ansible_groups
-      ansible.host_vars = ansible_host_vars
+      ansible.playbook          = config_playbook
+      ansible.groups            = ansible_groups
+      ansible.host_vars         = ansible_host_vars
+      #ansible.extra_vars        = { ansible_python_interpreter:"/usr/bin/python3.6" }
     end
   end
 end
